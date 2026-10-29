@@ -69,7 +69,9 @@ final class PresentationTests: XCTestCase {
         let text = DeviceWorkbench.recordStatus(device(source: "来源未知"))
         XCTAssertTrue(text.contains("来源待确认")); XCTAssertFalse(text.contains("缓存记录"))
         XCTAssertTrue(text.contains("当前在线未确认"))
-    }    func testStartupDoesNotClaimHealthyOrInventResponses() {
+    }
+
+    func testStartupDoesNotClaimHealthyOrInventResponses() {
         let state = CheckOverview.make(probes: [], checking: false, hasFrame: false, issueCount: 0)
         XCTAssertEqual(state.title, "现在上网顺不顺？")
         XCTAssertTrue(state.resultLine.contains("还没有"))
