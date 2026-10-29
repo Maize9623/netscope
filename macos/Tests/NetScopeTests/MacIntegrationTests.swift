@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 @testable import NetScope
 
@@ -17,10 +18,14 @@ final class MacIntegrationTests: XCTestCase {
     }
     func testRealNettopFormat() async throws {
         try requireRunner()
-        let result=try await CodexCommand.run(path:"/usr/bin/nettop",arguments:["-P","-L","2","-s","1","-n","-x","-J","bytes_in,bytes_out"],input:Data(),timeout:8)
-        guard result.exitCode == 0 else { throw XCTSkip("macOS runner did not allow nettop") }
-        let snapshot=ProcessMonitor.parse(result.stdout)
-        XCTAssertNotEqual(snapshot.state,"unknown",String(result.stdout.prefix(3000)))
-        XCTAssertTrue(snapshot.rows.allSatisfy { $0.downloadBps >= 0 && $0.uploadBps >= 0 })
+        let snapshot = try await ProcessMonitor.capture()
+        if snapshot.note.contains("不会自动提权") { throw XCTSkip("macOS runner did not allow nettop") }
+        XCTAssertTrue(["measured", "partial"].contains(snapshot.state), snapshot.note)
+        XCTAssertEqual(snapshot.intervalIsApproximate, true)
+        XCTAssertTrue(snapshot.note.contains("收集窗口"), snapshot.note)
+        XCTAssertTrue(snapshot.intervalSeconds >= 0.2 && snapshot.intervalSeconds <= 10)
+        XCTAssertFalse(snapshot.rows.isEmpty)
+        XCTAssertTrue(snapshot.rows.allSatisfy { $0.downloadBps >= 0 && $0.uploadBps >= 0 && $0.receivedBytes != nil && $0.sentBytes != nil })
+        print("Nettop real capture: state=\(snapshot.state), rows=\(snapshot.rows.count), window=\(snapshot.intervalSeconds), basis=\(snapshot.timingBasis ?? "unknown")")
     }
 }

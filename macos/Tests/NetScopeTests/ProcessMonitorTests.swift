@@ -42,4 +42,35 @@ final class ProcessMonitorTests: XCTestCase {
         let sample = ProcessMonitor.parse(header+"12:00:00,App.42,100,200\n12:00:01,App.42,100,200", at: at)
         XCTAssertEqual(sample.state, "measured"); XCTAssertEqual(sample.rows.first?.downloadBps, 0); XCTAssertEqual(sample.rows.first?.observedSharePercent, 0)
     }
+    func testRealRepeatedHeaderCSVUsesObservedWindowAndPreservesBytes() {
+        let csv = ",bytes_in,bytes_out,\nApp.42,100,200,\n,bytes_in,bytes_out,\nApp.42,350,325,\n"
+        let sample = ProcessMonitor.parse(csv, at: at, observedInterval: 1.25)
+        XCTAssertEqual(sample.state, "measured"); XCTAssertEqual(sample.intervalSeconds, 1.25)
+        XCTAssertEqual(sample.rows.first?.downloadBps, 200); XCTAssertEqual(sample.rows.first?.uploadBps, 100)
+        XCTAssertEqual(sample.rows.first?.receivedBytes, 250); XCTAssertEqual(sample.rows.first?.sentBytes, 125)
+        XCTAssertEqual(sample.intervalIsApproximate, true)
+        XCTAssertTrue(sample.note.contains("收集窗口")); XCTAssertTrue(sample.note.contains("不是内核精准"))
+    }
+    func testBufferedRealCSVDoesNotInventOneSecondOrZeroSpeed() {
+        let csv = ",bytes_in,bytes_out,\nApp.42,100,200,\n,bytes_in,bytes_out,\nApp.42,350,325,\n"
+        let sample = ProcessMonitor.parse(csv, at: at)
+        XCTAssertEqual(sample.state, "unknown"); XCTAssertTrue(sample.rows.isEmpty)
+        XCTAssertEqual(sample.observedBytes?.first?.receivedBytes, 250)
+        XCTAssertEqual(sample.observedBytes?.first?.sentBytes, 125)
+    }
+    func testInvalidObservedWindowKeepsRawByteEvidence() {
+        let csv = ",bytes_in,bytes_out,\nApp.42,100,200,\n,bytes_in,bytes_out,\nApp.42,350,325,\n"
+        for window in [Double.nan, Double.infinity, -1, 0, 0.001, 11] {
+            let sample = ProcessMonitor.parse(csv, at: at, observedInterval: window)
+            XCTAssertEqual(sample.state, "unknown"); XCTAssertTrue(sample.rows.isEmpty)
+            XCTAssertEqual(sample.observedBytes?.first?.receivedBytes, 250)
+        }
+    }
+    func testActualCSVWhitespaceAndUnexpectedThirdSample() {
+        let block = ",bytes_in,bytes_out,\nRunner.Worker.1928, 38623, 133475,\n"
+        let sample = ProcessMonitor.parse(block + block, at: at, observedInterval: 1)
+        XCTAssertEqual(sample.state, "measured"); XCTAssertEqual(sample.rows.first?.pid, 1928)
+        XCTAssertEqual(sample.rows.first?.name, "Runner.Worker"); XCTAssertEqual(sample.rows.first?.receivedBytes, 0)
+        XCTAssertEqual(ProcessMonitor.parse(block + block + block, at: at, observedInterval: 1).state, "unknown")
+    }
 }

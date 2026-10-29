@@ -63,8 +63,8 @@ struct ProcessPage: View {
         VStack(alignment:.leading,spacing:18) {
             HStack {Text("本机软件工位 · 以这段记录时间为准").font(.title2.bold());Spacer();Button(model.processBusy ? "正在看这一小段用量…" : "看看谁正在用网") {Task {await model.refreshProcesses()}}.disabled(model.processBusy)}
             Toggle("每十秒自动看一次软件用量",isOn:$model.processAutoEnabled)
-            Text(model.processTraffic?.note ?? "点按钮读取系统提供的短时间用量。不会关闭软件或限制网速。暂时查不到时会显示未知。").foregroundStyle(.secondary)
-            if let snapshot=model.processTraffic {Text("这段记录：\(AppModel.time(snapshot.at)) · \(String(format:"%.1f",snapshot.intervalSeconds)) 秒").font(.caption).foregroundStyle(.secondary)}
+            Text(details ? (model.processTraffic?.note ?? "尚无记录") : model.processTraffic?.state == "unknown" ? "这次系统没有给出足够准确的记录，暂时算不出速度。不会把它当成没用网。" : "这是短时间内的平均用量，不会限制软件。VPN 和应用可能重复记账，比例也不代表占满宽带。").foregroundStyle(.secondary)
+            if let snapshot=model.processTraffic {Text("这段记录：\(AppModel.time(snapshot.at)) · " + (snapshot.intervalSeconds > 0 ? "约 \(String(format:"%.1f",snapshot.intervalSeconds)) 秒" : "时长暂不确定")).font(.caption).foregroundStyle(.secondary)}
             LazyVGrid(columns:[GridItem(.adaptive(minimum:250),alignment:.top)],spacing:16) {
                 ForEach(model.processTraffic?.rows ?? []) {row in
                     VStack(alignment:.leading,spacing:12) {
@@ -74,7 +74,7 @@ struct ProcessPage: View {
                         Text("上传 \(AppModel.rate(row.uploadBps))")
                         ProgressView(value:min(100,max(0,row.observedSharePercent)),total:100).tint(.teal)
                         Text(String(format:"占这次显示的记录 %.1f%%",row.observedSharePercent)).font(.caption).foregroundStyle(.secondary)
-                        if details {Text("程序：\(row.name)\nPID：\(row.pid)").font(.caption.monospaced()).textSelection(.enabled)}
+                        if details {Text("程序：\(row.name)\nPID：\(row.pid)\n收到字节：\(row.receivedBytes.map { String($0) } ?? "未知")\n发出字节：\(row.sentBytes.map { String($0) } ?? "未知")").font(.caption.monospaced()).textSelection(.enabled)}
                     }.padding(20).frame(maxWidth:.infinity,minHeight:220,alignment:.topLeading).background(Color.secondary.opacity(0.08),in:RoundedRectangle(cornerRadius:16))
                 }
             }
