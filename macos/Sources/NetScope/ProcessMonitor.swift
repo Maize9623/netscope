@@ -38,8 +38,11 @@ private final class NettopHeaderClock: @unchecked Sendable {
 enum ProcessMonitor {
     static func capture() async throws -> ProcessTrafficSnapshot {
         let clock = NettopHeaderClock()
-        let result = try await CodexCommand.run(path: "/usr/bin/nettop",
-            arguments: ["-P","-L","2","-s","1","-n","-x","-J","bytes_in,bytes_out"],
+        // A plain stdout pipe is block-buffered by nettop on real macOS. A
+        // private PTY restores line flushing; -L still forces CSV. No shell or
+        // visible terminal is opened, and the transcript goes to /dev/null.
+        let result = try await CodexCommand.run(path: "/usr/bin/script",
+            arguments: ["-q","/dev/null","/usr/bin/nettop","-P","-L","2","-s","1","-n","-x","-J","bytes_in,bytes_out"],
             input: Data(), timeout: 8, lineHandler: { line, _ in clock.observe(line); return false })
         guard result.exitCode == 0 else {
             return ProcessTrafficSnapshot(at: Date(), intervalSeconds: 0, state: "unknown",
@@ -149,3 +152,4 @@ enum ProcessMonitor {
         fields.append(field);return fields
     }
 }
+

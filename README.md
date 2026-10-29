@@ -8,7 +8,7 @@
 
 - **Windows**：使用打包好的 NetScope.exe。完整教学见 [Windows 使用指南](windows/README.md)。
 - **M4 / M5 Mac mini、MacBook**：使用构建产物 NetScope.app。安装和功能差异见 [Mac 使用指南](macos/README.md)。
-- [版本发布页](https://github.com/Maize9623/netscope/releases)提供各平台下载包；Actions 保留构建和测试日志。
+- 本轮以源码交付为主：Mac 拉取仓库后运行 `bash macos/build.sh`，即可得到 `macos/dist/NetScope.app`。Actions 只做自动验证，不占用安装包存储。
 - 开发者：Windows 运行 `windows/build.ps1`；Mac 运行 `bash macos/build.sh`。
 
 ## 默认先看六件事

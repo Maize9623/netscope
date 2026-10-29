@@ -2,7 +2,21 @@
 
 适用 Apple Silicon Mac（包括 M4/M5 Mac mini 和 MacBook），最低 macOS 14。主窗口、菜单栏和悬浮窗均为原生 SwiftUI/AppKit。
 
-## 安装和打开
+## 明天在办公室最快的用法
+
+本轮不依赖 GitHub 安装包发布。先在 Mac 安装 Apple 开发工具（终端运行 `xcode-select --install` 并完成安装），再从你的私有 GitHub 仓库拉取代码：
+
+```bash
+git clone https://github.com/Maize9623/netscope.git
+cd netscope/macos
+bash build.sh
+open dist/NetScope.app
+```
+
+私有仓库需要你的 GitHub 登录，密码不能直接代替 GitHub 的命令行认证；如果已有 GitHub Desktop，用它克隆也可以。已经拉过代码时，在仓库里执行 `git pull` 后重新运行构建脚本即可。
+
+构建不调用 AI，也不需要把公司网络数据上传 GitHub。安装开发工具是第一次的准备工作，以后通常无需重装。
+## 可选的预编译安装包（仅在发布页存在时）
 
 1. 在本私有仓库的 Releases 版本发布页，下载 **NetScope-macOS-arm64.zip**。
 2. 解压 `NetScope-macOS-arm64.zip`，得到 `NetScope.app`。

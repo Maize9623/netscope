@@ -30,14 +30,6 @@ jobs:
         env:
           NETSCOPE_LOCAL_SMOKE: '1'
         run: swift test --filter MacIntegrationTests
-      - uses: actions/upload-artifact@v4
-        if: github.event_name != 'workflow_dispatch' || inputs.release_tag == ''
-        continue-on-error: true
-        with:
-          name: NetScope-macOS-arm64
-          path: macos/dist/NetScope-macOS-arm64.zip
-          retention-days: 14
-          if-no-files-found: error
       - name: Upload to private release
         if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
         env:
@@ -60,14 +52,6 @@ jobs:
       - name: Package Windows app
         shell: powershell
         run: Compress-Archive -Path windows/NetScope.exe,windows/NetScope.exe.config,windows/lib,windows/README.md -DestinationPath NetScope-Windows.zip
-      - uses: actions/upload-artifact@v4
-        if: github.event_name != 'workflow_dispatch' || inputs.release_tag == ''
-        continue-on-error: true
-        with:
-          name: NetScope-Windows
-          path: NetScope-Windows.zip
-          retention-days: 14
-          if-no-files-found: error
       - name: Upload to private release
         if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
         shell: bash
