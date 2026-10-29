@@ -1,0 +1,46 @@
+name: Build and verify
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['macos/**', 'windows/**', '.github/workflows/build.yml']
+permissions:
+  contents: read
+concurrency:
+  group: netscope-build-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build, test and create Apple Silicon app
+        working-directory: macos
+        run: bash build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NetScope-macOS-arm64
+          path: macos/dist/NetScope-macOS-arm64.zip
+          retention-days: 14
+          if-no-files-found: error
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and run offline tests
+        shell: powershell
+        working-directory: windows
+        run: |
+          ./tests.ps1
+          ./build.ps1
+      - name: Package Windows app
+        shell: powershell
+        run: Compress-Archive -Path windows/NetScope.exe,windows/NetScope.exe.config,windows/lib,windows/README.md -DestinationPath NetScope-Windows.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NetScope-Windows
+          path: NetScope-Windows.zip
+          retention-days: 14
+          if-no-files-found: error

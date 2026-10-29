@@ -1,0 +1,29 @@
+NetScope optional process-traffic dependencies (private deployment only)
+
+Microsoft.Diagnostics.Tracing.TraceEvent 2.0.76, Microsoft, MIT.
+Copyright: Microsoft Corporation. All rights reserved.
+Official package: https://www.nuget.org/packages/Microsoft.Diagnostics.Tracing.TraceEvent/2.0.76
+Official source and license: https://github.com/microsoft/perfview/tree/T2.0.76
+The net45 build is used. Included package assemblies: TraceEvent, FastSerialization,
+OSExtensions, Dia2Lib and TraceReloggerLib. Symbol/relogging APIs are not called.
+
+System.Runtime.CompilerServices.Unsafe 4.5.2, Microsoft, MIT.
+Official package: https://www.nuget.org/packages/System.Runtime.CompilerServices.Unsafe/4.5.2
+The netstandard1.0 implementation selected by .NET Framework compatibility is used.
+Original license and third-party notices are retained in licenses/.
+
+Total managed deployment: 3,281,296 bytes (about 3.13 MiB).
+The helper requires Windows 8 or newer, .NET Framework, and user-approved elevated
+execution for ETW kernel events. No driver, packet capture or global package install
+is performed. Windows named real-time sessions use built-in ETW; the native symbol
+and KernelTraceControl binaries from the package are not deployed or used.
+The helper never starts the legacy global NT Kernel Logger session.
+
+Collection: TCP and UDP IPv4/IPv6 Send/Recv PID and size counters, plus process
+name/lifetime metadata to separate reused PIDs. No network content, endpoints,
+command line, stack, ETL trace file or process credentials are written.
+Stats are observed ETW event bytes, not physical NIC bytes. VPN/proxy/app layers
+may count the same logical transfer more than once. Reported lost events mark
+incomplete observations. Live snapshots replace one JSON file; no history is
+written by this helper. Ordinary stop, parent exit and handled failures dispose
+only the helper's named session. Forced termination/power loss cannot run cleanup.

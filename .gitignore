@@ -1,0 +1,15 @@
+.build/
+.swiftpm/
+.DS_Store
+macos/dist/
+windows/NetScope.exe
+windows/NetScope.pdb
+windows/tests/results/
+*.user
+*.suo
+*.log
+*.jsonl
+.env
+.env.*
+auth.json
+config.local.json

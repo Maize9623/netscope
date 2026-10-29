@@ -1,0 +1,17 @@
+using System;using System.Diagnostics;using System.IO;using System.Linq;using System.Web.Script.Serialization;using Microsoft.Diagnostics.Tracing.Session;using NetScope;
+public class ProcessTrafficTests{
+ static int checks;static void Assert(bool value,string text){checks++;if(!value)throw new Exception(text);Console.WriteLine("PASS "+text);}
+ public static void Main(){try{
+  var a=new ProcessTrafficCollector.TrafficAccumulator("test-session",123,456);var now=DateTime.UtcNow;
+  a.Started(100,"browser.worker.exe",now);a.Add(100,1000,false,now);a.Add(100,100,true,now);a.Add(200,500,true,now);a.Add(300,0,true,now);a.Add(300,-1,false,now);
+  var s=a.TakeSnapshot(0,true,"Running",null);Assert(s.Processes.Count==2,"zero-sized events must not create rows");Assert(s.EventCount==3,"event count");Assert(s.CumulativeReceivedBytes==1000&&s.CumulativeSentBytes==600,"global totals");Assert(Math.Abs(s.Processes.Sum(x=>x.ObservedSharePercent)-100)<0.0001,"observed percentages");var p=s.Processes.Single(x=>x.Pid==100);Assert(p.Name=="browser.worker","preserve dots in process name");Assert(p.ReceivedBytes==1000&&p.SentBytes==100,"window bytes");Assert(Math.Abs(p.DownloadBps*s.IntervalSeconds-1000)<0.001,"actual time denominator");string first=p.InstanceId;
+  s=a.TakeSnapshot(0,true,"Running",null);Assert(s.Processes.Count==0,"idle windows clear rows");Assert(s.CumulativeReceivedBytes==1000,"cumulative retained");
+  a.Add(100,200,false,now);s=a.TakeSnapshot(0,true,"Running",null);p=s.Processes.Single();Assert(p.CumulativeReceivedBytes==1200,"process cumulative retained");
+  a.Exited(100,now);a.Started(100,"new.exe",now.AddSeconds(1));a.Add(100,30,true,now.AddSeconds(1));s=a.TakeSnapshot(4,true,"Running",null);p=s.Processes.Single();Assert(p.InstanceId!=first,"PID reuse identity");Assert(p.CumulativeSentBytes==30&&p.CumulativeReceivedBytes==0,"PID reuse resets instance counters");Assert(s.IsPartial&&s.LostEventsInWindow==4,"lost events mark partial");
+  s=a.TakeSnapshot(4,true,"Running",null);Assert(s.LostEventsInWindow==0&&s.IsPartial,"loss interval versus cumulative");s=a.TakeSnapshot(4,false,"Running",null);Assert(s.IsPartial,"unknown loss query marks partial");
+  for(int i=0;i<4200;i++)a.Started(1000+i,"p.exe",now.AddTicks(i));s=a.TakeSnapshot(4,true,"Running",null);Assert(s.EvictedProcessRecords>0&&s.IsPartial,"bounded state marks eviction");
+  string path=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"process-traffic-permission.json");if(TraceEventSession.IsElevated()==true)Console.WriteLine("SKIP live privilege test: this test does not start elevated collection");else{int pid;using(var self=Process.GetCurrentProcess())pid=self.Id;ProcessTrafficCollector.Run(path,pid);var json=new JavaScriptSerializer().Deserialize<ProcessTrafficSnapshot>(File.ReadAllText(path));Assert(json.State=="PermissionRequired"&&json.Processes.Count==0,"nonadmin guard");ProcessTrafficCollector.Run(path,pid);json=new JavaScriptSerializer().Deserialize<ProcessTrafficSnapshot>(File.ReadAllText(path));Assert(json.State=="PermissionRequired","atomic replace existing snapshot");Assert(!Directory.GetFiles(Path.GetDirectoryName(path),"process-traffic-permission.json.tmp-*").Any(),"temporary output cleanup");}
+  Console.WriteLine("PASS "+checks+" process traffic checks; no UAC prompt or ETW session started");
+ }catch(Exception e){Console.WriteLine("FAIL "+e.GetType().Name+": "+e.Message);Environment.ExitCode=1;}}
+}
+

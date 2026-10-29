@@ -1,0 +1,20 @@
+NetScope 最终本地验收结果
+完成时间：2026-10-29 22:28:08（北京时间）
+
+冻结版本的全部源代码连同实际 ETW 类型和 lib 依赖编译成功。
+七组验收全部通过：
+  DiagnosticsTests：39 项
+  ControllerReviewTests：8 项
+  QuotaClientTests：9 项
+  FinalIntegrationTests：16 项
+  AiReportTests：34 项
+  ProcessInsightsTests：33 项
+  ProcessTrafficTests：19 项
+合计：158 项检查通过，0 项失败；七个测试程序均返回退出码 0。
+
+覆盖：诊断归因边界、HTTP 407 代理认证与目标状态区分、采集未知值、历史/路径隔离、桶内峰值、匿名化、CSV 注入防护、设备标签持久化与清除、设置保存、损坏日志尾行恢复、历史 AI 输入证据绑定、额度缺失值、严格 AI 报告解析、按进程启动标识隔离的流量趋势、事件聚合、丢事件状态及权限边界。
+
+本轮默认验收完全使用本地合成数据，没有启动监测定时器、模型调用、外部网络请求、UAC 提示或 ETW 监听。进程规则使用正式 ETW 模型编译；真实管理员权限捕获及实际网络效果需另行现场验证。实际额度只读联调已在开发过程中独立成功完成，不计入这158项。
+
+复现：在 NetScope 目录运行 .\tests.ps1
+详细结果：tests\results\ 内的七个 *.results.txt 和 summary.txt。

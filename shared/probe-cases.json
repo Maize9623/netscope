@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "scope": "One configured request from one computer; response does not establish inference or provider-wide health.",
+  "cases": [
+    { "name": "endpoint_reply", "statusCode": 200, "outcome": "ok", "countsAsAttempt": true, "httpResponse": true, "positiveControl": true, "transportFailure": false },
+    { "name": "redirect_final_unverified", "statusCode": 302, "outcome": "redirect", "countsAsAttempt": true, "httpResponse": true, "positiveControl": true, "transportFailure": false },
+    { "name": "authentication_required", "statusCode": 401, "outcome": "authRequired", "countsAsAttempt": true, "httpResponse": true, "positiveControl": true, "transportFailure": false },
+    { "name": "restricted", "statusCode": 403, "outcome": "forbidden", "countsAsAttempt": true, "httpResponse": true, "positiveControl": true, "transportFailure": false },
+    { "name": "path_missing", "statusCode": 404, "outcome": "notFound", "countsAsAttempt": true, "httpResponse": true, "positiveControl": true, "transportFailure": false },
+    { "name": "method_restricted", "statusCode": 405, "outcome": "methodNotAllowed", "countsAsAttempt": true, "httpResponse": true, "positiveControl": true, "transportFailure": false },
+    { "name": "proxy_authentication_target_unknown", "statusCode": 407, "outcome": "proxyAuthRequired", "countsAsAttempt": true, "httpResponse": true, "positiveControl": false, "transportFailure": false },
+    { "name": "rate_limit_scope_unknown", "statusCode": 429, "outcome": "rateLimited", "countsAsAttempt": true, "httpResponse": true, "positiveControl": true, "transportFailure": false },
+    { "name": "server_or_path_response_error", "statusCode": 503, "outcome": "serverError", "countsAsAttempt": true, "httpResponse": true, "positiveControl": false, "transportFailure": false },
+    { "name": "other_http_reply", "statusCode": 418, "outcome": "httpError", "countsAsAttempt": true, "httpResponse": true, "positiveControl": true, "transportFailure": false },
+    { "name": "request_timeout", "statusCode": null, "outcome": "timeout", "countsAsAttempt": true, "httpResponse": false, "positiveControl": false, "transportFailure": true },
+    { "name": "dns_attempt_failed", "statusCode": null, "outcome": "dnsError", "countsAsAttempt": true, "httpResponse": false, "positiveControl": false, "transportFailure": true },
+    { "name": "tls_attempt_failed", "statusCode": null, "outcome": "tlsError", "countsAsAttempt": true, "httpResponse": false, "positiveControl": false, "transportFailure": true },
+    { "name": "proxy_connect_failed", "statusCode": null, "outcome": "proxyError", "countsAsAttempt": true, "httpResponse": false, "positiveControl": false, "transportFailure": true },
+    { "name": "connect_failed", "statusCode": null, "outcome": "connectError", "countsAsAttempt": true, "httpResponse": false, "positiveControl": false, "transportFailure": true },
+    { "name": "invalid_configuration", "statusCode": null, "outcome": "invalidURL", "countsAsAttempt": false, "httpResponse": false, "positiveControl": false, "transportFailure": false },
+    { "name": "collector_busy_not_attempted", "statusCode": null, "outcome": "skipped", "countsAsAttempt": false, "httpResponse": false, "positiveControl": false, "transportFailure": false },
+    { "name": "internal_error_unknown", "statusCode": null, "outcome": "error", "countsAsAttempt": false, "httpResponse": false, "positiveControl": false, "transportFailure": false }
+  ]
+}
+
