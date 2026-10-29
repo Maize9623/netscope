@@ -1,17 +1,15 @@
-# macOS test status
+# macOS validation status
 
-The package contains 87 XCTest test methods covering 18 shared outcome fixtures, conservative diagnoses, HTTP 407, missing data, path and URL isolation, latency thresholds, pauses, anonymous report privacy, explicit report truncation, counter reset/sleep, settings, CSV, neighbour records, local recovery, strict AI JSON, unknown quota fields, and nettop counter differences.
+Commit f4155a8 was built on GitHub's macos-15-arm64 runner in run 40899571744 on 2026-10-29. The debug and release builds succeeded, and all 87 XCTest methods then present passed with zero failures. The app packaging step also completed. Both platform jobs failed only when uploading artifacts because the account's Actions artifact storage quota was full.
 
-These tests make no live service requests, run no Codex command, and consume no model quota. Store tests use a unique temporary directory and remove only that directory.
+The current source contains 93 XCTest methods: 91 offline tests and two opt-in local macOS sampler checks. The four new CSV tests and the two sampler checks were added after that first successful build and still require the next CI run. Offline tests make no live service requests, run no Codex command, and consume no model quota. Temporary-file tests remove only their uniquely created directories.
 
-Status on 2026-10-29: source and fixtures were reviewed on Windows; shared JSON and embedded valid JSON fixtures were parsed locally. This host has no Swift compiler or macOS SDK. `swift test`, native linking, and the actual macOS UI/counter integration have NOT been run on this host. The GitHub macOS workflow is the next compilation and XCTest check. Do not report the 87 methods as passed until that workflow or an actual Mac run succeeds.
+The optional sampler tests require NETSCOPE_LOCAL_SMOKE=1. They read local 64-bit interface counters and bounded nettop output, do not issue service probes, do not invoke a model, and do not request sudo. A hosted runner check is not a replacement for Wi-Fi/Ethernet/VPN and sleep/wake testing on a physical Mac.
 
-On Apple Silicon with Xcode Command Line Tools:
+Run on a Mac with Xcode Command Line Tools:
 
-```sh
-cd macos
-swift test
-```
+    cd macos
+    swift test
+    NETSCOPE_LOCAL_SMOKE=1 swift test --filter MacIntegrationTests
 
-A successful synthetic suite still requires a physical Mac smoke test: initial sampling, Wi-Fi/Ethernet switch, sleep/wake, VPN and explicit proxy/PAC, disabled targets, malformed local files, tray/floating-window behavior, notifications, and safe app shutdown.
-
+Physical-device checks still needed: Wi-Fi/Ethernet switches, sleep/wake, VPN and explicit proxy/PAC, disabled targets, malformed local files, tray/floating-window behavior, notifications, and safe app shutdown. Never interpret unknown counters, denied nettop access, or missing proxy metrics as measured zero or proof of an outage.

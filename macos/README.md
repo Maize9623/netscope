@@ -4,8 +4,8 @@
 
 ## 安装和打开
 
-1. 在本私有仓库 Actions 中进入成功的 Build and verify，下载 **NetScope-macOS-arm64**。
-2. 解压下载内容，再解压里面的 `NetScope-macOS-arm64.zip`，得到 `NetScope.app`。
+1. 在本私有仓库的 Releases 版本发布页，下载 **NetScope-macOS-arm64.zip**。
+2. 解压 `NetScope-macOS-arm64.zip`，得到 `NetScope.app`。
 3. 拖到“应用程序”后打开。应用目前使用本地临时签名，未购买开发者证书、未做 Apple 公证。若 macOS 提示无法验证开发者，在确认下载来自自己的私有仓库后，按系统的“隐私与安全性 → 仍要打开”流程操作。不要全局关闭系统安全保护。
 4. 第一次打开会自动记录网络，关闭主窗口后菜单栏仍可继续显示。彻底结束请从菜单栏选择“退出 NetScope”。电脑睡眠期间不会有记录，唤醒后的空白不算断网。
 

@@ -28,7 +28,7 @@ enum ProcessMonitor {
                   let seconds = clockSeconds(fields[0]) else { continue }
             let label = fields[1].trimmingCharacters(in: .whitespaces)
             guard let dot = label.lastIndex(of: "."), let pid = Int(label[label.index(after: dot)...]), pid >= 0 else { continue }
-            guard let received = UInt64(fields[receiveIndex]), let sent = UInt64(fields[sendIndex]) else { invalidRows += 1; continue }
+            guard let received = UInt64(fields[receiveIndex].trimmingCharacters(in: .whitespaces)), let sent = UInt64(fields[sendIndex].trimmingCharacters(in: .whitespaces)) else { invalidRows += 1; continue }
             if samples.last?.stamp != fields[0] { samples.append((fields[0],seconds,[:])) }
             let name = String(label[..<dot]); guard !name.isEmpty else { continue }
             samples[samples.count-1].values[label] = Counter(pid: pid,name: name,received: received,sent: sent)

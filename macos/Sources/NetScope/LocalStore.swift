@@ -24,15 +24,14 @@ final class LocalStore: @unchecked Sendable {
         self.baseURL = (baseURL ?? support.appendingPathComponent("NetScope", isDirectory: true)).standardizedFileURL
         historyURL = self.baseURL.appendingPathComponent("history", isDirectory: true)
         try FileManager.default.createDirectory(at: historyURL, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        let fractional = ISO8601DateFormatter(); fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let standard = ISO8601DateFormatter(); standard.formatOptions = [.withInternetDateTime]
+        let dates = BackendDateCodec()
         encoder.outputFormatting = [.sortedKeys]
         encoder.dateEncodingStrategy = .custom { date, coding in
-            var value = coding.singleValueContainer(); try value.encode(fractional.string(from: date))
+            var value = coding.singleValueContainer(); try value.encode(dates.string(from: date))
         }
         decoder.dateDecodingStrategy = .custom { coding in
             let value = try coding.singleValueContainer(); let text = try value.decode(String.self)
-            guard let date = fractional.date(from: text) ?? standard.date(from: text) else {
+            guard let date = dates.date(from: text) else {
                 throw DecodingError.dataCorruptedError(in: value, debugDescription: "Invalid UTC ISO8601 timestamp")
             }
             return date
@@ -187,3 +186,23 @@ final class LocalStore: @unchecked Sendable {
     }
 }
 
+
+/// Formatter objects are confined by a dedicated lock before sharing them with
+/// Foundation's Sendable encoder/decoder callbacks.
+private final class BackendDateCodec: @unchecked Sendable {
+    private let lock = NSLock()
+    private let fractional = ISO8601DateFormatter()
+    private let standard = ISO8601DateFormatter()
+    init() {
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        standard.formatOptions = [.withInternetDateTime]
+    }
+    func string(from date: Date) -> String {
+        lock.lock(); defer { lock.unlock() }
+        return fractional.string(from: date)
+    }
+    func date(from text: String) -> Date? {
+        lock.lock(); defer { lock.unlock() }
+        return fractional.date(from: text) ?? standard.date(from: text)
+    }
+}

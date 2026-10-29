@@ -102,4 +102,39 @@ final class BackendContractTests: XCTestCase {
         XCTAssertEqual(settings.retentionDays, 90); XCTAssertEqual(settings.maxAiCallsPerDay, 200)
         XCTAssertEqual(settings.timeoutSeconds, 3)
     }
+    private func gatewayCSV(_ content: String) throws -> URL {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("netscope-csv-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("gateway.csv")
+        try content.write(to: url, atomically: true, encoding: .utf8)
+        return url
+    }
+    func testGatewayCSVImportsObservedRatesAndZonedTime() throws {
+        let url = try gatewayCSV("ip,mac,name,download_bps,upload_bps,observed_at,device_type\n192.0.2.1,aa:bb:cc:dd:ee:ff,Router,2048.5,0,2026-10-29T18:00:00+08:00,router\n")
+        let row = try XCTUnwrap(DeviceCollector.importGatewayCSV(url: url).first)
+        XCTAssertEqual(row.downloadBps, 2048.5); XCTAssertEqual(row.uploadBps, 0)
+        XCTAssertEqual(row.observedAt, ISO8601DateFormatter().date(from: "2026-10-29T10:00:00Z"))
+        XCTAssertTrue(row.hint.contains("router（未核实）")); XCTAssertTrue(row.state.contains("不是实时"))
+    }
+    func testGatewayCSVRejectsInvalidRatesAndUnknownObservationTime() throws {
+        let url = try gatewayCSV("ip,download_bps,upload_bps,observed_at\n192.0.2.1,NaN,-1,2026-10-29T10:00:00\n192.0.2.2,Infinity,wrong,\n")
+        let rows = try DeviceCollector.importGatewayCSV(url: url)
+        XCTAssertEqual(rows.count, 2)
+        for row in rows { XCTAssertNil(row.downloadBps); XCTAssertNil(row.uploadBps); XCTAssertNil(row.observedAt) }
+    }
+    func testGatewayCSVLabelsDoNotEraseImportedMeasurements() throws {
+        let url = try gatewayCSV("ip,mac,name,download_bytes_per_second,upload_bytes_per_second\n192.0.2.1,a:b:c:d:e:f,network-name,12,24\n")
+        let row = try XCTUnwrap(DeviceCollector.importGatewayCSV(url: url, labels: ["0a:0b:0c:0d:0e:0f":"我的标签"]).first)
+        XCTAssertEqual(row.name, "我的标签"); XCTAssertEqual(row.mac, "0a:0b:0c:0d:0e:0f")
+        XCTAssertEqual(row.downloadBps, 12); XCTAssertEqual(row.uploadBps, 24)
+        XCTAssertNil(row.observedAt); XCTAssertEqual(row.source, "网关CSV导入")
+    }
+    func testGatewayCSVParsersPreserveUnknownValues() {
+        for value in ["", "NaN", "nan", "inf", "-0.1", "1e1000"] { XCTAssertNil(DeviceCollector.importedRate(value), value) }
+        XCTAssertEqual(DeviceCollector.importedRate("0"), 0)
+        XCTAssertNotNil(DeviceCollector.importedDate("2026-10-29T10:00:00.123Z"))
+        XCTAssertNil(DeviceCollector.importedDate("2026-10-29T10:00:00"))
+        XCTAssertNil(DeviceCollector.importedDate("invalidZ"))
+    }
 }

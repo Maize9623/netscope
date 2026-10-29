@@ -1,6 +1,11 @@
 name: Build and verify
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing private release tag to upload packages to (optional)'
+        required: false
+        type: string
   push:
     branches: [main]
     paths: ['macos/**', 'windows/**', '.github/workflows/build.yml']
@@ -12,20 +17,37 @@ concurrency:
 jobs:
   macos:
     runs-on: macos-15
+    permissions:
+      contents: write
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Build, test and create Apple Silicon app
         working-directory: macos
         run: bash build.sh
+      - name: Read real macOS interface counters and nettop format
+        working-directory: macos
+        env:
+          NETSCOPE_LOCAL_SMOKE: '1'
+        run: swift test --filter MacIntegrationTests
       - uses: actions/upload-artifact@v4
+        if: github.event_name != 'workflow_dispatch' || inputs.release_tag == ''
+        continue-on-error: true
         with:
           name: NetScope-macOS-arm64
           path: macos/dist/NetScope-macOS-arm64.zip
           retention-days: 14
           if-no-files-found: error
+      - name: Upload to private release
+        if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: gh release upload "$RELEASE_TAG" macos/dist/NetScope-macOS-arm64.zip --repo "$GITHUB_REPOSITORY" --clobber
   windows:
     runs-on: windows-2022
+    permissions:
+      contents: write
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -39,8 +61,17 @@ jobs:
         shell: powershell
         run: Compress-Archive -Path windows/NetScope.exe,windows/NetScope.exe.config,windows/lib,windows/README.md -DestinationPath NetScope-Windows.zip
       - uses: actions/upload-artifact@v4
+        if: github.event_name != 'workflow_dispatch' || inputs.release_tag == ''
+        continue-on-error: true
         with:
           name: NetScope-Windows
           path: NetScope-Windows.zip
           retention-days: 14
           if-no-files-found: error
+      - name: Upload to private release
+        if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: gh release upload "$RELEASE_TAG" NetScope-Windows.zip --repo "$GITHUB_REPOSITORY" --clobber

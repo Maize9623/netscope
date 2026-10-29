@@ -73,7 +73,11 @@ enum DeviceCollector {
         }
         let macColumn = column(["mac", "mac address", "macaddress", "mac地址"])
         let nameColumn = column(["name", "hostname", "device", "alias", "名称", "主机名", "设备名"])
-        var devices: [DeviceInfo] = []; let imported = Date()
+        let receivedColumn = column(["download_bps", "download_bytes_per_second"])
+        let sentColumn = column(["upload_bps", "upload_bytes_per_second"])
+        let observedColumn = column(["observed_at"])
+        let typeColumn = column(["device_type", "type"])
+        var devices: [DeviceInfo] = []
         for row in rows.dropFirst() {
             guard ipColumn < row.count else { continue }
             let ip = row[ipColumn].trimmingCharacters(in: .whitespacesAndNewlines)
@@ -82,11 +86,32 @@ enum DeviceCollector {
             let mac = BackendValidation.normalizedMAC(rawMAC)
             let reported = nameColumn.flatMap { $0 < row.count ? row[$0] : nil }?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let name = mac.flatMap { labels[$0] } ?? (reported.isEmpty ? "未知" : String(reported.prefix(120)))
+            func value(_ index: Int?) -> String {
+                index.flatMap { $0 < row.count ? row[$0].trimmingCharacters(in: .whitespacesAndNewlines) : nil } ?? ""
+            }
+            let download = importedRate(value(receivedColumn)), upload = importedRate(value(sentColumn))
+            let observed = importedDate(value(observedColumn))
+            let type = String(value(typeColumn).prefix(120))
             devices.append(DeviceInfo(ip: ip, mac: mac ?? "", name: name,
-                hint: "网关CSV声明；设备类型及当前在线性未验证；速率未知",
-                state: "导入记录（不是实时探测）", source: "网关CSV导入", observedAt: imported))
+                hint: "网关CSV声明；" + (type.isEmpty ? "设备类型未知" : "声明类型：" + type + "（未核实）") +
+                      "；当前在线性未验证；用量单位B/s",
+                state: observed == nil ? "导入记录（采集时间未知，非实时）" : "导入历史记录（不是实时探测）",
+                source: "网关CSV导入", downloadBps: download, uploadBps: upload, observedAt: observed))
         }
         var seen = Set<String>(); return devices.filter { seen.insert($0.id).inserted }
+    }
+
+    static func importedRate(_ value: String) -> Double? {
+        guard let number = Double(value), number.isFinite, number >= 0 else { return nil }
+        return number
+    }
+    static func importedDate(_ value: String) -> Date? {
+        guard value.range(of: #"(Z|[+-]\d{2}:\d{2})$"#, options: .regularExpression) != nil else { return nil }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: value) { return date }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: value)
     }
 
     static func parseCSV(_ input: String) throws -> [[String]] {
@@ -189,3 +214,4 @@ private final class PassiveCommand: @unchecked Sendable {
         continuation.resume(with: value)
     }
 }
+
