@@ -7,7 +7,7 @@ using System.Windows.Forms;
 using System.Reflection;
 [assembly:AssemblyTitle("NetScope 上网助手")]
 [assembly:AssemblyDescription("网络记录、小白体检与 Codex 分析")]
-[assembly:AssemblyVersion("0.2.0.0")]
+[assembly:AssemblyVersion("0.3.0.0")]
 namespace NetScope {
  static class Program {
   [STAThread] static int Main(string[] args){if(args.Length==3&&args[0]=="--traffic-helper"){int parent;if(!Int32.TryParse(args[2],out parent))return 2;ProcessTrafficCollector.Run(args[1],parent);return 0;}string data=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"NetScope");for(int i=0;i<args.Length-1;i++)if(args[i]=="--data")data=Path.GetFullPath(args[i+1]);

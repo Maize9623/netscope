@@ -33,7 +33,7 @@ $libraryPath = Join-Path $runDirectory 'NetScope.dll'
 $libraryArgs = @('/nologo','/target:library','/platform:x64','/langversion:5','/codepage:65001','/optimize+',('/out:' + $libraryPath)) + $references
 & $compilerPath @libraryArgs @sourceFiles
 if ($LASTEXITCODE -ne 0) { throw 'Application source compilation for tests failed.' }
-$names = @('DiagnosticsTests','ControllerReviewTests','QuotaClientTests','FinalIntegrationTests','AiReportTests','ProcessInsightsTests','ProcessTrafficTests','DeviceAITests','DeviceIdentityTests')
+$names = @('DiagnosticsTests','ControllerReviewTests','QuotaClientTests','FinalIntegrationTests','AiReportTests','ProcessInsightsTests','ProcessTrafficTests','DeviceAITests','DeviceIdentityTests','CollectorAdapterTests','DeviceDiscoveryTests','DiscoveryControllerTests','UiRegression')
 $overall = New-Object 'System.Collections.Generic.List[string]'
 $failureCount = 0
 foreach ($name in $names) {
@@ -52,9 +52,24 @@ foreach ($name in $names) {
         $testSources += Join-Path $sourceRoot 'Models.cs'
         $testSources += Join-Path $sourceRoot 'DeviceIdentity.cs'
     }
+    if ($name -eq 'CollectorAdapterTests' -or $name -eq 'DeviceDiscoveryTests') {
+        $testArgs = @($testArgs | Where-Object { $_ -ne ('/r:' + $libraryPath) })
+        $testSources += Join-Path $sourceRoot 'Models.cs'
+        $testSources += Join-Path $sourceRoot 'NetworkCollector.cs'
+        if ($name -eq 'DeviceDiscoveryTests') {
+            $testSources += Join-Path $sourceRoot 'DeviceIdentity.cs'
+            $testSources += Join-Path $sourceRoot 'DeviceDiscovery.cs'
+        }
+    }
+    if ($name -eq 'UiRegression') {
+        $testArgs = @($testArgs | Where-Object { $_ -ne ('/r:' + $libraryPath) })
+        $testArgs += '/main:UiRegression'
+        $testSources += $sourceFiles
+    }
     & $compilerPath @testArgs @testSources
     if ($LASTEXITCODE -ne 0) { throw ('Test compilation failed: ' + $name) }
     $arguments = @()
+    if ($name -eq 'UiRegression') { $arguments = @($runDirectory) }
     if ($name -eq 'FinalIntegrationTests') { $arguments = @((Join-Path $sourceRoot 'MainForm.cs')) }
     if ($name -eq 'QuotaClientTests' -and $LiveQuota) {
         $codexCommand = Get-Command 'codex.exe' -ErrorAction Stop
@@ -74,8 +89,3 @@ $overall.Add('Test data and detailed logs: ' + $runDirectory)
 $overall | Set-Content -LiteralPath (Join-Path $runDirectory 'summary.txt') -Encoding UTF8
 $overall | ForEach-Object { Write-Output $_ }
 if ($failureCount -gt 0) { throw ($failureCount.ToString() + ' test suites failed.') }
-
-
-
-
-

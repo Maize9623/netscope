@@ -6,8 +6,8 @@
 <key>CFBundleIdentifier</key><string>com.netscope.local</string>
 <key>CFBundleExecutable</key><string>NetScope</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.2.0</string>
-<key>CFBundleVersion</key><string>2</string>
+<key>CFBundleShortVersionString</key><string>0.3.0</string>
+<key>CFBundleVersion</key><string>3</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSHighResolutionCapable</key><true/>
 <key>NSLocalNetworkUsageDescription</key><string>检查你设置的内部网站是否有回应，帮助定位本地网络卡顿。</string>

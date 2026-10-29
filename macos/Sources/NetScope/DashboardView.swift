@@ -12,7 +12,7 @@ struct DashboardView: View {
             VStack(alignment: .leading, spacing: 16) {
                 Text("NETSCOPE").font(.system(size: 24, weight: .bold, design: .rounded))
                 Text("上网助手").foregroundStyle(.mint)
-                List(pages, id: \.self, selection: Binding<String?>(get: { page }, set: { if let value = $0 { page = value } })) { name in Text(name).tag(name).padding(.vertical, 5) }.listStyle(.sidebar)
+                List(pages, id: \.self, selection: Binding<String?>(get: { page }, set: { if let value = $0 { page = value } })) { name in Label(name, systemImage: Self.pageSymbol(name)).tag(name).padding(.vertical, 5) }.listStyle(.sidebar)
                 Text("记录留在这台电脑\n关掉窗口后仍可后台检查").font(.caption).foregroundStyle(.secondary)
             }.padding(.top, 24).padding(.horizontal, 12).frame(minWidth: 215)
         } detail: {
@@ -53,8 +53,10 @@ struct DashboardView: View {
                 Picker("外观", selection: $theme) { Text("跟随系统").tag("system"); Text("日间").tag("light"); Text("夜间").tag("dark") }.frame(width: 140)
             }
             HStack {
-                Button("检查现在为什么卡") { page = "检查为什么卡"; Task { await model.runCheck() } }.buttonStyle(.borderedProminent).tint(.teal).disabled(model.isChecking)
-                if model.isChecking { ProgressView().controlSize(.small) }
+                if page != "检查为什么卡" {
+                    Button("检查现在为什么卡") { page = "检查为什么卡"; Task { await model.runCheck() } }.buttonStyle(.borderedProminent).tint(.teal).disabled(model.isChecking)
+                    if model.isChecking { ProgressView().controlSize(.small) }
+                }
                 Button(model.isMonitoring ? "暂停后台" : "恢复后台") { model.toggleMonitoring() }
                 Button("小悬浮窗") { MiniPanelController.shared.toggle(model: model) }
                 Spacer()
@@ -63,26 +65,84 @@ struct DashboardView: View {
         }.padding(24).background(.regularMaterial)
     }
     private var probes: [ProbeResult] { model.frame?.probes ?? [] }
-    private var failed: [ProbeResult] { probes.filter { $0.outcome.isTransportFailure } }
-    private var responses: Int { probes.filter { $0.statusCode != nil && $0.statusCode != 407 }.count }
+    private var failed: [ProbeResult] { probes.filter { Diagnostics.isTransportFailure($0) } }
+    private var responses: Int { probes.filter { Diagnostics.httpStatus($0) != nil && $0.statusCode != 407 }.count }
+    private var overview: CheckOverview {
+        CheckOverview.make(probes: probes, checking: model.isChecking, hasFrame: model.frame != nil, issueCount: model.issueCount)
+    }
+    private var activeProcess: ProcessTrafficRow? {
+        guard let sample = model.processTraffic, ["measured", "partial"].contains(sample.state) else { return nil }
+        return sample.rows.filter { $0.downloadBps.isFinite && $0.uploadBps.isFinite && $0.downloadBps + $0.uploadBps > 0 }.max { $0.downloadBps + $0.uploadBps < $1.downloadBps + $1.uploadBps }
+    }
     private var checkPage: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text(model.isChecking ? "正在检查：电脑联网 → 常用网站 → AI 应用" : model.lastCheckAt.map { "最近检查：" + AppModel.time($0) } ?? "点上方按钮，看看现在为什么卡。")
-                .font(.headline)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 270), alignment: .top)], spacing: 16) {
-                QuestionCard(title: "1 · 现在网络怎么了？", conclusion: probes.isEmpty ? "还没开始检查" : failed.isEmpty ? "这次有 \(responses) 个网站回应" : "\(failed.count) 个应用这次没回应", note: "有回应不等于已经验证能正常聊天。下面逐个列出结果。")
-                QuestionCard(title: "2 · 哪里可能不通？", conclusion: probes.isEmpty ? "还没有结果" : failed.isEmpty ? "暂时没发现连不上的地方" : "目前还不能确定", note: failed.isEmpty ? "如果你仍然觉得卡，需要继续记录卡顿发生的那一刻。" : "可能与本机、公司网络、VPN 或应用服务有关，不能只凭一次检查认定是谁的问题。")
-                QuestionCard(title: "3 · 网速正常吗？", conclusion: "还没测最大下载速度", note: "当前下载 \(model.downloadText)。这是正在用的量，不能当作你的宽带上限。Mac 版暂未提供主动测速。")
-                QuestionCard(title: "4 · 别的设备在占网吗？", conclusion: model.devices.contains(where: { $0.downloadBps != nil }) ? "有路由器提供的用量记录" : "现在还查不到", note: "需要路由器提供各设备的用量。只看到设备出现，不能判断它抢了多少网。", action: "看看有哪些设备") { page = "这是什么设备" }
-                QuestionCard(title: "5 · 我的哪个软件在用网？", conclusion: model.processTraffic?.rows.first.map { ProcessPage.friendly($0) + " 在上次记录中用得较多" } ?? "可以检查本机软件", note: "读取系统提供的短时间用量，不限制任何软件。VPN 和应用的记录可能重复。", action: "查看软件工位") { page = "哪个软件在用网" }
-                QuestionCard(title: "6 · 我应该怎么做？", conclusion: failed.isEmpty ? "先试试刚才觉得卡的应用" : "先重试，再比较另一网络", note: "若持续卡顿，让 AI 结合这段时间的记录给建议；它判断不了时会直接说不知道。", action: "让 AI 帮我看") { page = "AI 帮我看" }
+        VStack(alignment: .leading, spacing: 24) {
+            HStack(alignment: .center, spacing: 30) {
+                ZStack {
+                    Circle().fill(overview.tint.opacity(0.09)).frame(width: 132, height: 132)
+                    Circle().stroke(overview.tint.opacity(0.20), lineWidth: 1).frame(width: 132, height: 132)
+                    if model.isChecking { ProgressView().controlSize(.large).tint(.teal).scaleEffect(1.4) }
+                    else { Image(systemName: overview.symbol).font(.system(size: 52, weight: .light)).foregroundStyle(overview.tint).symbolRenderingMode(.hierarchical) }
+                }.accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(overview.title).font(.system(size: 28, weight: .semibold)).fixedSize(horizontal: false, vertical: true)
+                    Text(overview.note).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Button { Task { await model.runCheck() } } label: {
+                        Label(model.isChecking ? "正在检查…" : "立即检查", systemImage: "waveform.path.ecg")
+                            .font(.headline).padding(.horizontal, 22).padding(.vertical, 5)
+                    }.buttonStyle(.borderedProminent).controlSize(.large).tint(.teal).disabled(model.isChecking)
+                    Text(model.isChecking ? "正在收集新结果，下方保留上一次已完成的检查。" : model.lastCheckAt.map { "最近完成于 " + AppModel.time($0) } ?? "按你启用的项目检查，结果保存在这台 Mac。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }.padding(28).frame(maxWidth: .infinity, alignment: .leading)
+                .background(overview.tint.opacity(0.035), in: RoundedRectangle(cornerRadius: 20))
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack { Text("这次检查告诉你什么").font(.title3.weight(.semibold)); Spacer(); Text("点开一项看说明").font(.caption).foregroundStyle(.secondary) }
+                VStack(spacing: 0) {
+                    CheckResultRow(symbol: "network", title: "现在网络怎么了？", conclusion: overview.resultLine,
+                        note: "每个应用都单独检查。有回应只说明这次连接收到了回复，登录、聊天和生成内容仍要在应用中确认。", tint: overview.tint)
+                    Divider().padding(.leading, 42)
+                    CheckResultRow(symbol: "point.3.connected.trianglepath.dotted", title: "哪里可能不通？",
+                        conclusion: probes.isEmpty ? "还没有足够结果" : !failed.isEmpty || model.issueCount > 0 ? "需要结合多次结果判断" : probes.contains(where: { Diagnostics.isMissing($0) }) ? "有项目还没测到" : "这次没有发现连接失败",
+                        note: "本机、当前网络、VPN 和应用服务都可能影响体验。一次检查无法确定责任；持续记录与换网对比能帮助缩小范围。")
+                    Divider().padding(.leading, 42)
+                    CheckResultRow(symbol: "arrow.down.up", title: "网速正常吗？", conclusion: "当前下载 " + model.downloadText,
+                        note: "这是所选接口正在使用的速率，不是宽带上限。上传为 \(model.uploadText)。Mac 版目前没有主动测速，不能据此判断最大带宽是否正常。", action: "看看用量曲线") { page = "现在上网怎么样" }
+                    Divider().padding(.leading, 42)
+                    CheckResultRow(symbol: "desktopcomputer.and.macbook", title: "别的设备在占网吗？",
+                        conclusion: model.devices.contains(where: { $0.source == "网关CSV导入" && ($0.downloadBps != nil || $0.uploadBps != nil) }) ? "有导入记录，需核对记录时间" : "目前还不知道",
+                        note: "设备缓存只能说明这台 Mac 曾经看到过某些记录。判断其他设备用了多少网，需要路由器提供对应时段的用量。", action: "打开网络设备工位") { page = "这是什么设备" }
+                    Divider().padding(.leading, 42)
+                    CheckResultRow(symbol: "app.connected.to.app.below.fill", title: "哪个软件在用网？",
+                        conclusion: activeProcess.map { ProcessPage.friendly($0) + " 在上次记录中用得较多" } ?? "可以单独观察本机软件",
+                        note: "这里比较系统返回的短时间记录；VPN 和应用可能重复记账，不能把它们相加当作整条线路的用量。", action: "打开软件工位") { page = "哪个软件在用网" }
+                    Divider().padding(.leading, 42)
+                    CheckResultRow(symbol: "lightbulb", title: "接下来怎么做？", conclusion: probes.isEmpty ? "先完成一次检查" : failed.isEmpty ? "在刚才卡顿的应用里再试一下" : "重试，并比较另一条网络",
+                        note: "如果仍然卡顿，AI 可以结合实际记录解释哪些原因值得怀疑。信息不足时会保留“不知道”，调用会消耗模型额度。", action: "查看 AI 分析") { page = "AI 帮我看" }
+                }.padding(.horizontal, 18).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
             }
-            services
+            DisclosureGroup("查看每个应用的检查详情") { services.padding(.top, 14) }
+                .font(.headline)
+        }
+    }
+    private static func pageSymbol(_ name: String) -> String {
+        switch name {
+        case "检查为什么卡": return "waveform.path.ecg"
+        case "现在上网怎么样": return "network"
+        case "过去的变化": return "chart.xyaxis.line"
+        case "这是什么设备": return "desktopcomputer.and.macbook"
+        case "哪个软件在用网": return "app.connected.to.app.below.fill"
+        case "AI 帮我看": return "sparkles"
+        case "额度与开关": return "slider.horizontal.3"
+        case "本机网络": return "point.3.connected.trianglepath.dotted"
+        case "卡顿记录": return "clock"
+        default: return "gearshape"
         }
     }
     private var overviewPage: some View {
         VStack(alignment: .leading, spacing: 22) {
-            HStack { MetricTile(title: "正在下载", value: model.downloadText); MetricTile(title: "正在上传", value: model.uploadText); MetricTile(title: "这次没回应", value: "\(failed.count) 个") }
+            HStack { MetricTile(title: "正在下载", value: model.downloadText); MetricTile(title: "正在上传", value: model.uploadText); MetricTile(title: "这次没回应", value: probes.isEmpty ? "尚未检查" : "\(failed.count) 个") }
             Text("最近十分钟 · 这台电脑正在用多少网").font(.headline)
             TrafficGraph(points: model.trafficPoints).frame(height: 250)
             Text("空白表示没有测到；没有把睡眠或暂停时段当作断网。").font(.callout).foregroundStyle(.secondary)
@@ -163,6 +223,57 @@ struct DashboardView: View {
     }
 }
 
+/// Presentation uses measured outcomes, never a synthetic health score.
+struct CheckOverview {
+    var title: String
+    var note: String
+    var resultLine: String
+    var symbol: String
+    var attention: Bool
+    var tint: Color { attention ? .orange : .teal }
+    static func make(probes: [ProbeResult], checking: Bool, hasFrame: Bool, issueCount: Int) -> CheckOverview {
+        let failures = probes.filter { Diagnostics.isTransportFailure($0) }.count
+        let missing = probes.filter { Diagnostics.isMissing($0) }.count
+        let replies = probes.filter { Diagnostics.httpStatus($0) != nil && $0.statusCode != 407 }.count
+        let authentication = probes.filter { $0.statusCode == 407 }.count
+        let notices = probes.filter { probe in guard let code = Diagnostics.httpStatus(probe) else { return false }; return code == 429 || code >= 500 }.count
+        let result: String
+        if probes.isEmpty { result = "还没有服务检查结果" }
+        else if failures > 0 { result = "\(failures) 项没连上，\(replies) 项有回应" }
+        else if authentication > 0 { result = "上网通道要求先登录" }
+        else if missing > 0 { result = "\(replies) 项有回应，\(missing) 项还没测到" }
+        else { result = "这次 \(replies) 个应用有回应" }
+        if checking { return CheckOverview(title: "正在检查当前连接", note: "正在查看这台 Mac、常用网站和你选择的 AI 应用。", resultLine: result, symbol: "waveform.path.ecg", attention: false) }
+        if !hasFrame { return CheckOverview(title: "现在上网顺不顺？", note: "做一次检查，再根据实际结果告诉你哪里值得留意。", resultLine: result, symbol: "network", attention: false) }
+        if probes.isEmpty { return CheckOverview(title: "还需要一些检查结果", note: "当前没有服务样本。可以在设置里开启你关注的应用，再检查一次。", resultLine: result, symbol: "questionmark.circle", attention: false) }
+        if failures > 0 { return CheckOverview(title: "有 \(failures) 项连接值得检查", note: "这次没有连上，还不能确定是当前网络、VPN 还是应用服务的问题。", resultLine: result, symbol: "wifi.exclamationmark", attention: true) }
+        if authentication > 0 { return CheckOverview(title: "上网通道需要先登录", note: "目前还没验证这些应用是否正常。先查看公司上网认证或 VPN 的提示。", resultLine: result, symbol: "person.crop.circle.badge.exclamationmark", attention: true) }
+        if notices > 0 || issueCount > 0 { return CheckOverview(title: "有回应，也有值得留意的提示", note: "展开下面的结果，看看哪些应用返回错误或出现了明显变化。", resultLine: result, symbol: "exclamationmark.bubble", attention: true) }
+        if missing > 0 { return CheckOverview(title: "有 \(missing) 项还没有测到", note: "没有完成的检查暂时不能判断，稍后再试一次。", resultLine: result, symbol: "questionmark.circle", attention: false) }
+        return CheckOverview(title: "这次 \(replies) 个应用有回应", note: "连接收到了回复；登录和聊天是否正常，还需要在应用里确认。", resultLine: result, symbol: "network", attention: false)
+    }
+}
+
+struct CheckResultRow: View {
+    var symbol: String; var title: String; var conclusion: String; var note: String
+    var tint: Color = .teal; var action: String? = nil; var perform: (() -> Void)? = nil
+    @State private var expanded = false
+    var body: some View {
+        DisclosureGroup(isExpanded: $expanded) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(note).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                if let action { Button(action) { perform?() }.font(.callout) }
+            }.padding(.leading, 36).padding(.bottom, 14).frame(maxWidth: .infinity, alignment: .leading)
+        } label: {
+            HStack(alignment: .center, spacing: 14) {
+                Image(systemName: symbol).font(.system(size: 19)).foregroundStyle(tint).frame(width: 24)
+                Text(title).font(.body.weight(.medium)).frame(width: 180, alignment: .leading)
+                Text(conclusion).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+            }.padding(.vertical, 18)
+        }.tint(.secondary)
+    }
+}
 struct QuestionCard: View {
     var title: String; var conclusion: String; var note: String; var action: String? = nil; var perform: (() -> Void)? = nil
     var body: some View {

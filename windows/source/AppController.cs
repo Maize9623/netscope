@@ -12,9 +12,13 @@ namespace NetScope {
  public sealed class AppController : IDisposable {
   readonly object gate=new object(); readonly NetworkCollector collector=new NetworkCollector(); readonly Store store;
   AppSettings settings; LocalSample local; MonitorFrame frame; List<HistoryPoint> history; List<Finding> events; List<DeviceInfo> devices=new List<DeviceInfo>(); List<ConnectionInfo> connections=new List<ConnectionInfo>();
-  readonly List<ProcessTrafficSnapshot> processHistory=new List<ProcessTrafficSnapshot>(); ProcessTrafficSnapshot processTraffic; string processTrafficStatus="未启用：普通模式仅显示连接，精确进程字节计量需管理员权限"; DateTime lastProcessSample=DateTime.MinValue,lastProcessPersist=DateTime.MinValue; bool processTrafficRequested; AiReport currentAiReport; QuotaSnapshot quota; int quotaReading; DateTime lastQuotaAttempt=DateTime.MinValue; System.Threading.Timer timer; int ticking,probing,analyzing; bool disposed,monitoring; DateTime lastProbe=DateTime.MinValue,lastTraffic=DateTime.MinValue,lastAiAttempt=DateTime.MinValue,lastPrune=DateTime.MinValue; string lastSignature=""; int probeCount; DateTime trafficPrevious=DateTime.MinValue; double trafficDown,trafficUp,trafficSeconds,trafficPeakDown,trafficPeakUp; int trafficCount; string trafficAdapter;
+  readonly List<ProcessTrafficSnapshot> processHistory=new List<ProcessTrafficSnapshot>(); ProcessTrafficSnapshot processTraffic; string processTrafficStatus="未启用：普通模式仅显示连接，精确进程字节计量需管理员权限"; DateTime lastProcessSample=DateTime.MinValue,lastProcessPersist=DateTime.MinValue; bool processTrafficRequested; AiReport currentAiReport; QuotaSnapshot quota; int quotaReading; DateTime lastQuotaAttempt=DateTime.MinValue; System.Threading.Timer timer; int ticking,probing,analyzing; bool disposed,monitoring; DateTime lastDeviceRefreshAttempt=DateTime.UtcNow; DateTime lastProbe=DateTime.MinValue,lastTraffic=DateTime.MinValue,lastAiAttempt=DateTime.MinValue,lastPrune=DateTime.MinValue; string lastSignature=""; int probeCount; DateTime trafficPrevious=DateTime.MinValue; double trafficDown,trafficUp,trafficSeconds,trafficPeakDown,trafficPeakUp; int trafficCount; string trafficAdapter;
   Dictionary<string,DateTime> recentEvents=new Dictionary<string,DateTime>(); string lastAiInput=""; string status="准备监测",aiStatus="等待足够的测量数据",lastAi="尚未生成 AI 分析。规则诊断和原始记录已可查看。"; DateTime? lastAiAt;
   Dictionary<string,DeviceLabel> deviceLabels=new Dictionary<string,DeviceLabel>(); Dictionary<string,DeviceAIInference> deviceInferences=new Dictionary<string,DeviceAIInference>(); AiUsage usage=new AiUsage(); Process aiProcess; readonly SemaphoreSlim deviceGuard=new SemaphoreSlim(1,1);
+  int discovering; CancellationTokenSource deviceDiscoveryCancellation;
+  string deviceDiscoveryStatus="平时只读记录；点查找设备才会发送少量检查。";
+  public bool IsDeviceDiscovering{get{return Interlocked.CompareExchange(ref discovering,0,0)!=0;}}
+  public string DeviceDiscoveryStatus{get{lock(gate)return deviceDiscoveryStatus;}}
   public event Action Changed; public event Action<Finding> Alert;
   public AppController(string dataDirectory){store=new Store(dataDirectory);settings=store.LoadSettings();Validate(settings);history=store.LoadHistory(settings.RetentionDays);events=store.LoadEvents(settings.RetentionDays).OrderBy(x=>x.At).ToList();try{string p=Path.Combine(store.DirectoryPath,"ai-usage.json");if(File.Exists(p))usage=Store.Parse<AiUsage>(File.ReadAllText(p))??new AiUsage();string a=Path.Combine(store.DirectoryPath,"last-ai.txt");if(File.Exists(a))lastAi=File.ReadAllText(a,Encoding.UTF8);lastAiAt=usage.LastAt;string structuredPath=Path.Combine(store.DirectoryPath,"last-ai.json");if(File.Exists(structuredPath))currentAiReport=AiReport.Parse(File.ReadAllText(structuredPath,Encoding.UTF8));}catch{} try{string inputPath=Path.Combine(store.DirectoryPath,"last-ai-input.txt");if(File.Exists(inputPath))lastAiInput=File.ReadAllText(inputPath,Encoding.UTF8);else{string latest=Directory.GetFiles(store.DirectoryPath,"ai-*.jsonl").OrderByDescending(x=>x).FirstOrDefault();if(latest!=null){string line=File.ReadLines(latest).LastOrDefault();if(!String.IsNullOrEmpty(line)){var entry=Store.Parse<Dictionary<string,object>>(line);if(entry.ContainsKey("summary"))lastAiInput=Convert.ToString(entry["summary"]);}}}}catch{} try{string labelPath=Path.Combine(store.DirectoryPath,"device-labels.json");if(File.Exists(labelPath))deviceLabels=Store.Parse<Dictionary<string,DeviceLabel>>(File.ReadAllText(labelPath,Encoding.UTF8))??new Dictionary<string,DeviceLabel>();}catch{} try{string inferencePath=Path.Combine(store.DirectoryPath,"device-ai-guesses.json");if(File.Exists(inferencePath)&&new FileInfo(inferencePath).Length<1048576)deviceInferences=Store.Parse<Dictionary<string,DeviceAIInference>>(File.ReadAllText(inferencePath,Encoding.UTF8))??new Dictionary<string,DeviceAIInference>();}catch{} ResetUsage();}
   public ProcessTrafficSnapshot ProcessTraffic{get{return processTraffic;}} public string ProcessTrafficStatus{get{return processTrafficStatus;}} public AiReport CurrentAiReport{get{return currentAiReport;}} public QuotaSnapshot Quota{get{lock(gate)return quota;}} public AppSettings Settings{get{lock(gate)return Store.Parse<AppSettings>(Store.Json(settings));}}
@@ -26,7 +30,7 @@ namespace NetScope {
   public int AiCallsToday{get{lock(gate){ResetUsage();return usage.Calls;}}} public long AiInputTokensToday{get{lock(gate)return usage.UnknownTokens?-1:usage.InputTokens;}} public long AiOutputTokensToday{get{lock(gate)return usage.UnknownTokens?-1:usage.OutputTokens;}}
   public void Start(){if(timer!=null)return;monitoring=settings.AutoMonitor;timer=new System.Threading.Timer(Tick,null,0,2000);}
   public void SetMonitoring(bool enabled){monitoring=enabled;if(!enabled&&processTrafficRequested)StopProcessTraffic();status=enabled?"自动监测中":"自动监测已暂停；暂停时段不计为故障";var s=Settings;s.AutoMonitor=enabled;SaveSettings(s);Notify();}
-  void Tick(object unused){if(disposed||Interlocked.Exchange(ref ticking,1)!=0)return;try{var s=Settings;RefreshProcessTraffic();if((DateTime.UtcNow-lastQuotaAttempt).TotalMinutes>=10){var quotaTask=RefreshQuotaAsync();}if(!monitoring)return;var v=collector.CaptureLocal(s.TrafficAdapterId);lock(gate)local=v;
+  void Tick(object unused){if(disposed||Interlocked.Exchange(ref ticking,1)!=0)return;try{var s=Settings;RefreshProcessTraffic();if((DateTime.UtcNow-lastQuotaAttempt).TotalMinutes>=10){var quotaTask=RefreshQuotaAsync();}if(!monitoring)return;if((DateTime.UtcNow-lastDeviceRefreshAttempt).TotalSeconds>=60){var passive=RefreshDevicesInBackgroundAsync();}var v=collector.CaptureLocal(s.TrafficAdapterId);lock(gate)local=v;
    if(trafficAdapter!=v.TrafficAdapterId){trafficAdapter=v.TrafficAdapterId;trafficDown=trafficUp=trafficSeconds=trafficPeakDown=trafficPeakUp=0;trafficCount=0;trafficPrevious=DateTime.MinValue;} double dt=(v.At-trafficPrevious).TotalSeconds; trafficPrevious=v.At; if(v.TrafficRateReady&&dt>0&&dt<=10){trafficDown+=v.DownloadBps*dt;trafficUp+=v.UploadBps*dt;trafficSeconds+=dt;trafficCount++;trafficPeakDown=Math.Max(trafficPeakDown,v.DownloadBps);trafficPeakUp=Math.Max(trafficPeakUp,v.UploadBps);} if((DateTime.UtcNow-lastTraffic).TotalSeconds>=30&&trafficSeconds>0){lastTraffic=DateTime.UtcNow;AddHistory(new HistoryPoint{At=v.At,TrafficAdapterId=v.TrafficAdapterId,NetworkProfileId=Fingerprint(v),DownloadBps=trafficDown/trafficSeconds,UploadBps=trafficUp/trafficSeconds,DownloadPeakBps=trafficPeakDown,UploadPeakBps=trafficPeakUp,SampleCount=trafficCount,SpanSeconds=trafficSeconds});trafficDown=trafficUp=trafficSeconds=trafficPeakDown=trafficPeakUp=0;trafficCount=0;}
    if((DateTime.UtcNow-lastProbe).TotalSeconds>=s.IntervalSeconds&&!IsProbing){var ignored=ProbeCycle(false);}
    if((DateTime.UtcNow-lastPrune).TotalHours>=12){lastPrune=DateTime.UtcNow;store.Prune(s.RetentionDays);lock(gate)history.RemoveAll(x=>x.At<DateTime.UtcNow.AddDays(-s.RetentionDays));}Notify();
@@ -60,7 +64,55 @@ namespace NetScope {
     status="设备名称检查完成；网络提供的名称不代表已确认设备主人。";Notify();
    }finally{deviceGuard.Release();}
   }
-  public async Task RefreshDevicesAsync(){if(!await deviceGuard.WaitAsync(0))return;try{var d=await collector.GetNeighborsAsync();var c=await Task.Run(()=>collector.GetConnections());lock(gate){var imports=devices.Where(x=>x.Source=="网关导入快照").ToList();devices=d.Where(x=>!imports.Any(i=>i.Ip==x.Ip)).Concat(imports).ToList();connections=c;ApplyDeviceLabels();}Notify();}finally{deviceGuard.Release();}}
+  async Task RefreshDevicesInBackgroundAsync(){try{await RefreshDevicesAsync();}catch(Exception ex){status="设备记录暂时没有读到："+ex.Message;Notify();}}
+  public async Task RefreshDevicesAsync(){if(!await deviceGuard.WaitAsync(0))return;lastDeviceRefreshAttempt=DateTime.UtcNow;try{var d=await collector.GetNeighborsAsync();var c=await Task.Run(()=>collector.GetConnections());lock(gate){var imports=devices.Where(x=>x.Source=="网关导入快照").ToList();devices=MergeDeviceSnapshot(devices,d).Where(x=>!imports.Any(i=>i.Ip==x.Ip)).Concat(imports).ToList();connections=c;ApplyDeviceLabels();}Notify();}finally{deviceGuard.Release();}}
+  // Preserve network-reported names only for the same address, MAC and source.
+  // A changed MAC must never inherit the previous occupant's identity.
+  static List<DeviceInfo> MergeDeviceSnapshot(List<DeviceInfo> previous,List<DeviceInfo> incoming){
+   var rows=(incoming??new List<DeviceInfo>()).Select(DeviceNameResolver.Clone).ToList();
+   foreach(var row in rows){
+    var prior=previous.FirstOrDefault(x=>x.Ip==row.Ip&&x.Source==row.Source&&
+     DiscoveryPlanning.ValidUnicastMac(x.Mac)&&DiscoveryPlanning.ValidUnicastMac(row.Mac)&&
+     NormalizeMac(x.Mac)==NormalizeMac(row.Mac));
+    if(prior==null||!String.IsNullOrWhiteSpace(row.ReportedNameSource)||String.IsNullOrWhiteSpace(prior.ReportedNameSource))continue;
+    row.ReportedName=prior.ReportedName;row.ReportedNameSource=prior.ReportedNameSource;row.ReportedHint=prior.ReportedHint;
+    row.Name=prior.ReportedName;row.NameSource=prior.ReportedNameSource;row.Hint=prior.ReportedHint;
+   }
+   foreach(var prior in previous.Where(x=>(x.Source??"").StartsWith("用户触发的有限 ICMP 回应",StringComparison.Ordinal)&&x.ObservedAt.HasValue&&x.ObservedAt.Value>DateTime.UtcNow.AddMinutes(-10))){
+    if(!rows.Any(x=>x.Ip==prior.Ip&&x.Source==prior.Source))rows.Add(DeviceNameResolver.Clone(prior));
+   }
+   return rows;
+  }
+  public void CancelDeviceDiscovery(){lock(gate){if(deviceDiscoveryCancellation!=null){deviceDiscoveryStatus="正在停止查找；已有记录会保留。";deviceDiscoveryCancellation.Cancel();}}Notify();}
+  public async Task DiscoverLocalDevicesAsync(){
+   if(disposed||Interlocked.Exchange(ref discovering,1)!=0)return;
+   bool held=false;CancellationTokenSource cancellation=null;
+   try{
+    held=await deviceGuard.WaitAsync(0);
+    if(!held){lock(gate)deviceDiscoveryStatus="设备记录正在刷新，请稍后再点查找设备。";return;}
+    cancellation=new CancellationTokenSource();
+    lock(gate){if(disposed)return;deviceDiscoveryCancellation=cancellation;deviceDiscoveryStatus="正在查找当前 Wi-Fi / 网线附近的设备，最多 20 秒；随时可以停止。";}
+    Notify();
+    string selected=Settings.TrafficAdapterId;
+    var current=await Task.Run(()=>collector.CaptureLocal(selected));lock(gate)local=current;
+    // A manually selected missing interface must be rejected by discovery,
+    // rather than silently using CaptureLocal's display fallback.
+    string selectedId=String.IsNullOrWhiteSpace(selected)||selected=="auto"?(current==null?null:current.TrafficAdapterId):selected;
+    var result=await DeviceDiscovery.DiscoverAsync(selectedId,cancellation.Token);
+    lock(gate){
+     var imports=devices.Where(x=>x.Source=="网关导入快照").ToList();
+     if(result.Devices!=null&&result.Devices.Count>0)devices=MergeDeviceSnapshot(devices,result.Devices).Where(x=>!imports.Any(i=>i.Ip==x.Ip)).Concat(imports).ToList();
+     ApplyDeviceLabels();
+     string ending=result.Cancelled?"已停止":!String.IsNullOrWhiteSpace(result.Error)?"本次查找未完整完成":result.DeadlineReached?"已到检查时限":"检查结束";
+     deviceDiscoveryStatus=ending+" · "+DateTime.Now.ToString("HH:mm:ss")+" · 检查了 "+result.Attempted+" 个地址，"+result.Replied+" 个有回应；没回应的仍不能确定。";
+     if(!String.IsNullOrWhiteSpace(result.Error))deviceDiscoveryStatus+="\n"+result.Error;
+     deviceDiscoveryStatus+="\n范围："+result.Scope;
+    }
+    store.Append("device-discovery",result);
+   }catch(OperationCanceledException){lock(gate)deviceDiscoveryStatus="查找已停止；已有记录保留。";}
+   catch(Exception ex){lock(gate)deviceDiscoveryStatus="本次查找未完成："+ex.Message+"；已有记录保留。";}
+   finally{lock(gate){if(Object.ReferenceEquals(deviceDiscoveryCancellation,cancellation))deviceDiscoveryCancellation=null;}if(cancellation!=null)cancellation.Dispose();if(held)deviceGuard.Release();Interlocked.Exchange(ref discovering,0);Notify();}
+  }
   public async Task<SpeedTestResult> RunSpeedTestAsync(){status="手动下载测速：最多 10 MB / 20 秒；结果只代表此目标、此时刻、此访问路径";Notify();var r=await collector.MeasureDownloadAsync();store.Append("speedtests",r);status=String.IsNullOrEmpty(r.Error)?"下载测速完成："+r.Mbps.ToString("F2")+" Mbps；不等于线路带宽上限":"测速未完成："+r.Error;Notify();return r;}
   public string BuildReport(bool anonymized){var all=GetHistory(TimeSpan.FromHours(24));var f=CurrentFrame;var b=new StringBuilder();b.AppendLine("NetScope 网络观测报告");b.AppendLine("生成时间："+DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm:ss zzz"));b.AppendLine("监测范围：单台 Windows / 当前网络路径；不是全网视角。HTTP 可达不是 AI 推理可用，探测失败率不是丢包率。");
    var publicTargets=Defaults.Create().Targets;
@@ -128,26 +180,7 @@ namespace NetScope {
   void ResetUsage(){string d=DateTime.Now.ToString("yyyy-MM-dd");if(usage.Date!=d)usage=new AiUsage{Date=d};}
   void SaveUsage(){File.WriteAllText(Path.Combine(store.DirectoryPath,"ai-usage.json"),Store.Json(usage),new UTF8Encoding(false));}
   void Notify(){if(disposed)return;var c=Changed;if(c!=null)c();}
-  public void Dispose(){if(processTrafficRequested)StopProcessTraffic();disposed=true;if(timer!=null)timer.Dispose();try{if(aiProcess!=null&&!aiProcess.HasExited)aiProcess.Kill();}catch{}}
+  public void Dispose(){lock(gate){if(disposed)return;disposed=true;if(deviceDiscoveryCancellation!=null)deviceDiscoveryCancellation.Cancel();}if(processTrafficRequested)StopProcessTraffic();if(timer!=null)timer.Dispose();try{if(aiProcess!=null&&!aiProcess.HasExited)aiProcess.Kill();}catch{}}
   public static string ProcessAlias(ProcessTrafficRow r){string name=(r.Name??"").ToLowerInvariant();if(new[]{"chrome","msedge","firefox","code","cursor","codex","chatgpt","onedrive","steam","weixin","qq","svchost","system","clash-verge","clash-verge-service","sing-box","v2ray","xray","netscope"}.Contains(name))return r.Name;using(var sha=System.Security.Cryptography.SHA256.Create())return "进程-"+BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(r.Pid+"|"+name))).Replace("-","").Substring(0,6);} static string Fingerprint(LocalSample l){if(l==null)return "unknown";string content=l.TrafficAdapterId+"|"+l.Gateway+"|"+l.ProxySummary+"|"+String.Join("|",l.Adapters.Where(a=>a.IsUp).Select(a=>a.Id+":"+a.Gateways+":"+a.DnsServers).OrderBy(x=>x));using(var sha=System.Security.Cryptography.SHA256.Create())return "net-"+BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(content))).Replace("-","").Substring(0,12);} public class AiUsage {public bool UnknownTokens{get;set;} public string Date{get;set;} public int Calls{get;set;} public long InputTokens{get;set;} public long OutputTokens{get;set;} public DateTime? LastAt{get;set;}}
  }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

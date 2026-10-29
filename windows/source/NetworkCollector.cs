@@ -28,7 +28,7 @@ public class NetworkCollector {
   try{interfaces=NetworkInterface.GetAllNetworkInterfaces();}catch{interfaces=new NetworkInterface[0];}
   foreach(NetworkInterface nic in interfaces){try{
    var a=new AdapterInfo{Id=nic.Id,Name=nic.Name,Description=nic.Description,IsVirtual=IsProbablyVirtual(nic),IsUp=nic.OperationalStatus==OperationalStatus.Up,Status=nic.OperationalStatus.ToString()};
-   a.Type=nic.NetworkInterfaceType.ToString()+(a.IsVirtual?"（疑似虚拟/隧道）":"");
+   a.Type=nic.NetworkInterfaceType.ToString()+(a.IsVirtual?(IsSoftwareLayer(nic.Name,nic.Description)?"（软件接口/过滤层）":"（疑似虚拟/隧道）"):"");
    a.Mac=FormatMac(nic.GetPhysicalAddress().GetAddressBytes());a.LinkMbps=Math.Max(0,nic.Speed/1000000.0);
    IPInterfaceProperties p=nic.GetIPProperties();var gateways=p.GatewayAddresses.Select(x=>x.Address).Where(IsUsableUnicast).ToList();
    a.Addresses=String.Join(", ",p.UnicastAddresses.Select(x=>x.Address.ToString()).ToArray());
@@ -242,9 +242,30 @@ public class NetworkCollector {
   string[] terms={"clash","mihomo","wireguard","openvpn","tailscale","zerotier","v2ray","xray","sing-box","shadowsocks","hiddify","nekoray","warp-svc","protonvpn","nordvpn","forticlient"};var found=new List<string>();
   try{foreach(Process process in Process.GetProcesses()){using(process){try{string name=process.ProcessName,lower=name.ToLowerInvariant();if(terms.Any(x=>lower.Contains(x))&&!found.Contains(name))found.Add(name);}catch{}}}}catch{}return String.Join(", ",found.OrderBy(x=>x).Take(8).ToArray());
  }
- static bool IsProbablyVirtual(NetworkInterface nic){
-  if(nic.NetworkInterfaceType==NetworkInterfaceType.Loopback||nic.NetworkInterfaceType==NetworkInterfaceType.Tunnel||nic.NetworkInterfaceType==NetworkInterfaceType.Ppp)return true;
-  string text=(nic.Name+" "+nic.Description).ToLowerInvariant();string[] terms={"virtual","hyper-v","vethernet","vmware","virtualbox","wintun","wireguard","vpn","clash","mihomo","tailscale","zerotier","hamachi","radmin","nordlynx","anyconnect","fortinet","forticlient","mullvad","proton","tap","tun"};return terms.Any(x=>text.Contains(x));
+ internal static bool IsProbablyVirtual(NetworkInterface nic){
+  return nic!=null&&IsProbablyVirtual(nic.Name,nic.Description,nic.NetworkInterfaceType);
+ }
+ // Explicit Windows software filter/miniport layers are not physical adapters,
+ // even when their inherited NDIS interface type says Ethernet or Wi-Fi.
+ internal static bool IsSoftwareLayer(string name,string description){
+  string text=AdapterDescription(name,description);
+  string[] layers={"wan miniport","packet scheduler","native wifi filter","native wi-fi filter",
+   "ndis lightweight filter","ndis light weight filter","ndis filter driver","wfp native mac layer",
+   "wfp 802.3 mac layer","wfp 802.11 mac layer"};
+  return layers.Any(x=>text.Contains(x));
+ }
+ internal static bool IsProbablyVirtual(string name,string description,NetworkInterfaceType type){
+  if(type==NetworkInterfaceType.Loopback||type==NetworkInterfaceType.Tunnel||type==NetworkInterfaceType.Ppp)return true;
+  if(IsSoftwareLayer(name,description))return true;
+  string text=AdapterDescription(name,description);
+  string[] terms={"virtual","hyper-v","vethernet","vmware","virtualbox","wintun","wireguard","clash","mihomo",
+   "tailscale","zerotier","hamachi","radmin","nordlynx","anyconnect","fortinet","forticlient","mullvad","proton"};
+  if(terms.Any(x=>text.Contains(x)))return true;
+  // Short substrings such as "tun" also occur in ordinary names (e.g. Tuning).
+  return System.Text.RegularExpressions.Regex.IsMatch(text,@"(?<![a-z0-9])(?:tap[0-9]*|tun[0-9]*|tunnel|vpn)(?![a-z0-9])");
+ }
+ static string AdapterDescription(string name,string description){
+  return System.Text.RegularExpressions.Regex.Replace(((name??"")+" "+(description??"")).ToLowerInvariant(),@"\s+"," ");
  }
  static Dictionary<int,long> ReadDefaultRouteMetrics(){
   var metrics=new Dictionary<int,long>();int length=0;IntPtr table=IntPtr.Zero;
@@ -275,7 +296,3 @@ public class NetworkCollector {
  [DllImport("iphlpapi.dll")]static extern uint GetExtendedTcpTable(IntPtr table,ref int size,[MarshalAs(UnmanagedType.Bool)]bool order,int family,int tableClass,uint reserved);
  [DllImport("iphlpapi.dll")]static extern uint GetIpForwardTable(IntPtr table,ref int size,[MarshalAs(UnmanagedType.Bool)]bool order);
 }}
-
-
-
-
