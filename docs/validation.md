@@ -10,7 +10,7 @@
 
 此前源码版本 36c0371 已通过 [40903372980](https://github.com/Maize9623/netscope/actions/runs/40903372980)：95 项离线测试通过，默认跳过的 2 项真实采样测试在独立阶段通过；debug/release 构建、Apple Silicon 打包和签名验证成功。真实 nettop 已验证输出格式与实际采集窗口，不假设固定一秒速率。
 
-v0.3 另加入桌面布局与设备分组的 21 项测试。新提交的最终结果以 Actions 对应提交为准。工作流只做源码验证，不上传 Actions 安装包，不依赖已满的安装包存储空间。
+v0.3 提交 848f591 已通过 [40911543125](https://github.com/Maize9623/netscope/actions/runs/40911543125)：Windows 测试、编译和打包成功；Mac 测试（包含新增 21 项界面语义和设备分组回归）、debug/release 编译、Apple Silicon 打包/签名以及真实接口计数与 nettop 检查全部成功。工作流没有上传 Actions 安装包或发布 Release，不依赖已满的安装包存储空间。
 
 macOS 界面尚未在用户 M4/M5 实体设备上操作验证；公司 VPN、休眠唤醒、设备识别和全天记录仍需实际体验。自动构建不能替代这些验证。
 
